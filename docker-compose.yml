@@ -2,7 +2,7 @@ services:
   # 1. Message Broker (Official Apache Kafka)
   kafka:
     image: apache/kafka:3.7.0
-    user: "root"                  # <--- เพิ่มบรรทัดนี้เข้ามาครับ!
+    user: "root"
     container_name: kafka_broker
     ports:
       - "9092:9092"
