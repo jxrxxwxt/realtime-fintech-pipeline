@@ -1,3 +1,4 @@
+import os
 import json
 import time
 import random
@@ -16,8 +17,8 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Fintech Data Generator")
 
-# Kafka configuration
-KAFKA_BOOTSTRAP_SERVERS = 'localhost:9092'
+# Kafka configuration (Reads from environment variable, defaults to localhost)
+KAFKA_BOOTSTRAP_SERVERS = os.getenv('KAFKA_BOOTSTRAP_SERVERS', 'localhost:9092')
 TOPIC_NAME = 'transactions'
 
 conf = {'bootstrap.servers': KAFKA_BOOTSTRAP_SERVERS}

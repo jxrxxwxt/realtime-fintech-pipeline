@@ -1,6 +1,9 @@
+import os
 import json
+import time
 import logging
 import psycopg2
+from psycopg2 import OperationalError
 from confluent_kafka import Consumer, KafkaError
 
 # Configure logging
@@ -10,21 +13,22 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Kafka Configuration
+# Kafka Configuration (Reads from environment variable)
+KAFKA_BOOTSTRAP_SERVERS = os.getenv('KAFKA_BOOTSTRAP_SERVERS', 'localhost:9092')
 KAFKA_CONFIG = {
-    'bootstrap.servers': 'localhost:9092',
+    'bootstrap.servers': KAFKA_BOOTSTRAP_SERVERS,
     'group.id': 'fintech_transaction_group',
     'auto.offset.reset': 'earliest'
 }
 TOPIC_NAME = 'transactions'
 
-# PostgreSQL Configuration
+# PostgreSQL Configuration (Reads from environment variables)
 DB_CONFIG = {
-    'dbname': 'transaction_db',
-    'user': 'admin',
-    'password': 'adminpassword',
-    'host': 'localhost',
-    'port': '5433'
+    'dbname': os.getenv('POSTGRES_DB', 'transaction_db'),
+    'user': os.getenv('POSTGRES_USER', 'admin'),
+    'password': os.getenv('POSTGRES_PASSWORD', 'adminpassword'),
+    'host': os.getenv('POSTGRES_HOST', 'localhost'),
+    'port': os.getenv('POSTGRES_PORT', '5433')
 }
 
 def init_db(conn):
@@ -64,6 +68,19 @@ def insert_transaction(conn, data):
     conn.commit()
     cursor.close()
 
+def get_db_connection(max_retries=5, delay=5):
+    """Attempt to connect to the database with a retry mechanism."""
+    for attempt in range(max_retries):
+        try:
+            conn = psycopg2.connect(**DB_CONFIG)
+            return conn
+        except OperationalError as e:
+            logger.warning(f"Database connection attempt {attempt + 1} failed. Retrying in {delay} seconds...")
+            time.sleep(delay)
+    
+    logger.error("Failed to connect to the database after maximum retries.")
+    raise Exception("Database connection timeout.")
+
 def start_consumer():
     """Main loop to consume messages from Kafka and ingest them into PostgreSQL."""
     consumer = Consumer(KAFKA_CONFIG)
@@ -71,8 +88,8 @@ def start_consumer():
     
     conn = None
     try:
-        # Establish database connection
-        conn = psycopg2.connect(**DB_CONFIG)
+        # Establish database connection with retry logic
+        conn = get_db_connection()
         init_db(conn)
         
         logger.info(f"Subscribed to Kafka topic: '{TOPIC_NAME}'. Awaiting messages...")
@@ -84,7 +101,6 @@ def start_consumer():
             
             if msg.error():
                 if msg.error().code() == KafkaError._PARTITION_EOF:
-                    # End of partition event, not an error
                     continue
                 else:
                     logger.error(f"Kafka error occurred: {msg.error()}")
